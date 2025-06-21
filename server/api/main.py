@@ -4,7 +4,9 @@ from routers import frontal
 from dotenv import load_dotenv
 from database import engine, Base
 from fastapi import FastAPI, Request
-from prometheus_fastapi_instrumentator import PrometheusFastApiInstrumentator
+from prometheus_fastapi_instrumentator import Instrumentator
+
+# from prometheus_fastapi_instrumentator import PrometheusFastApiInstrumentator
 
 load_dotenv()
 
@@ -20,19 +22,23 @@ app = FastAPI(
     version=API_FULL_VERSION,
 )
 
-PrometheusFastApiInstrumentator(
-    should_group_status_codes=False,
-    should_ignore_untemplated=True,
-    should_group_untemplated=False,
-    excluded_handlers=["/metrics", "/admin"],
-    buckets=[1, 2, 3, 4, 5],
-    metric_name="my_custom_metric_name",
-    label_names=(
-        "method_type",
-        "path",
-        "status_code",
-    ),
-).instrument(app).expose(app, "/prometheus_metrics")
+# PrometheusFastApiInstrumentator(
+#     should_group_status_codes=False,
+#     should_ignore_untemplated=True,
+#     should_group_untemplated=False,
+#     excluded_handlers=["/metrics", "/admin"],
+#     buckets=[1, 2, 3, 4, 5],
+#     metric_name="my_custom_metric_name",
+#     label_names=(
+#         "method_type",
+#         "path",
+#         "status_code",
+#     ),
+# ).instrument(app).expose(app, "/prometheus_metrics")
+
+# instrumentator =
+
+Instrumentator().instrument(app)
 
 app.include_router(frontal.router, prefix=f"/api/v{API_MAJOR_VERSION}/frontal")
 
@@ -45,6 +51,10 @@ async def read_root(request: Request):
         "docs_url": f"{str(request.url)}docs",
     }
 
+# @app.get("/death")
+# async def expose(request: Request):
+#     # add only admin can send this request to make this service down
+#     instrumentator.expose(app)
 
 if __name__ == "__main__":
     uvicorn.run(app, host=os.getenv("APP_HOST"), port=int(os.getenv("APP_PORT")))

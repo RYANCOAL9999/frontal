@@ -1,4 +1,5 @@
 import json
+from rich import print
 from database import get_db
 from typing import Dict, Any
 from functools import lru_cache
