@@ -6,4 +6,4 @@ set -e
 # Create a virtual environment for the project  
 virtualenv env
 # Activate the virtual environment  
-source project_env/bin/activate
+source env/bin/activate
