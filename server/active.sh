@@ -4,6 +4,6 @@
 
 set -e
 # Create a virtual environment for the project  
-python3 -m venv 
+virtualenv env
 # Activate the virtual environment  
 source project_env/bin/activate
