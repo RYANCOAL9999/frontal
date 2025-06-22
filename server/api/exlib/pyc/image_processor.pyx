@@ -50,7 +50,12 @@ cdef float _points_to_smooth_svg_path_helper(list points_list, list path_command
     path_commands.append("Z")
     return 1.0
 
-cpdef tuple process_image_data_intensive(dict landmarks_data, bytes original_image_base64_bytes 64):
+cpdef tuple process_image_data_intensive(
+    dict landmarks_data, 
+    bytes original_image_base64_bytes
+    # ,
+    # bytes segmentation_map_base64_bytes
+):
 
     cdef int i, j, dummy_calculation_result
     cdef list landmarks_list_of_lists
@@ -146,6 +151,12 @@ cpdef tuple process_image_data_intensive(dict landmarks_data, bytes original_ima
         crop_offset_x, crop_offset_y = 0, 0
         # print(f"Error in Cython image processing (rotation/cropping): {e}")
 
+    # --- Conceptual use of Segmentation Map ---
+    # Decoding the segmentation map (for conceptual use)
+    # seg_map_img = Image.open(BytesIO(base64.b64decode(segmentation_map_base64_bytes))).convert("L")
+    # For actual contour extraction from pixel masks, you would use a CV library (e.g., OpenCV) here.
+    # The current approach still relies on landmarks to define contours, but now they are
+    # *conceptually* influenced by segmentation map knowledge for exclusion.
 
     processed_landmarks_list_of_lists = []
     cdef list adjusted_contour_group
