@@ -14,7 +14,7 @@ from services.metrics import (
     job_processing_duration_seconds,
 )
 
-# --- Import the image processing function ---
+# Import the image processing function
 # This block attempts to import the compiled Cython module first from the new path.
 # If the Cython module (image_processor.so/.pyd within exlib/pyc) is found and successfully imported,
 # it will use that for performance.
