@@ -2,92 +2,144 @@ import math
 import base64
 from io import BytesIO
 from PIL import Image, ExifTags
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 
-CROP_PADDING = 50
+# Constants for cropping
+CROP_PADDING = 50  # Padding around the detected landmarks for cropping
 
 
-def _points_to_smooth_svg_path(points_list: List[Dict[str, float]]):
+# Helper function to convert points to a smooth SVG path
+def _points_to_smooth_svg_path(
+    points_list: List[Dict[str, float]],
+    exclude_region_landmarks: Optional[List[Dict[str, float]]] = None,
+):
 
+    # Ensure points_list is not empty
     if not points_list:
         return ""
 
+    # Ensure exclude_region_landmarks is a list, default to empty if None
     path_commands = []
 
-    path_commands.append(f"M {points_list[0]['x']} {points_list[0]['y']}")
+    # If exclude_region_landmarks is None, we treat it as an empty list
+    adjusted_points = []
 
-    num_points = len(points_list)
-    for i in range(num_points):
-        p1 = points_list[i]
-        p2 = points_list[(i + 1) % num_points]
+    # If exclude_region_landmarks is provided, we will adjust points away from it
+    if exclude_region_landmarks and len(points_list) > 2:
 
-        if num_points == 1:
-            return ""
+        # the start of the excluded region
+        ex_cx, ex_cy = 0.0, 0.0
 
-        start_x = points_list[0]["x"]
-        start_y = points_list[0]["y"]
-        path_commands.append(f"M {start_x} {start_y}")
-
-        if num_points == 2:
-            path_commands.append(f"L {points_list[1]['x']} {points_list[1]['y']}")
-        else:
-            mp_x = (points_list[0]["x"] + points_list[1]["x"]) / 2
-            mp_y = (points_list[0]["y"] + points_list[1]["y"]) / 2
-            path_commands.append(
-                f"Q {points_list[0]['x']} {points_list[0]['y']}, {mp_x} {mp_y}"
+        # Calculate the center of the excluded region landmarks
+        if exclude_region_landmarks:
+            sum_x = sum(p["x"] for p in exclude_region_landmarks)
+            sum_y = sum(p["y"] for p in exclude_region_landmarks)
+            ex_cx = (
+                sum_x / len(exclude_region_landmarks) if exclude_region_landmarks else 0
+            )
+            ex_cy = (
+                sum_y / len(exclude_region_landmarks) if exclude_region_landmarks else 0
             )
 
-            for i in range(1, num_points - 1):
-                p_current = points_list[i]
-                p_next = points_list[i + 1]
+        # Iterate through points to adjust them away from the excluded region center
+        for point in points_list:
+            dist = math.sqrt((point["x"] - ex_cx) ** 2 + (point["y"] - ex_cy) ** 2)
+            if dist < CROP_PADDING * 2:  # Arbitrary "too close" threshold
+                # Move point slightly away from the center of the excluded region
+                dx, dy = point["x"] - ex_cx, point["y"] - ex_cy
+                if dx == 0 and dy == 0:
+                    dx, dy = 1, 1  # Prevent division by zero
+                norm = math.sqrt(dx * dx + dy * dy)
+                adj_x = point["x"] + (dx / norm) * 5  # Move 5 pixels away
+                adj_y = point["y"] + (dy / norm) * 5
+                adjusted_points.append({"x": adj_x, "y": adj_y})
+            else:
+                adjusted_points.append(point)
+    else:
+        adjusted_points = points_list
 
-                mp_x = (p_current["x"] + p_next["x"]) / 2
-                mp_y = (p_current["y"] + p_next["y"]) / 2
-                path_commands.append(f"T {mp_x} {mp_y}")
+    # Now generate the smooth path using the adjusted points
+    num_points = len(adjusted_points)
+    if num_points == 0:
+        return ""
+    if num_points == 1:
+        return f"M {adjusted_points[0]['x']} {adjusted_points[0]['y']} Z"  # Single point as a path
 
-            p_last = points_list[num_points - 1]
-            p_first = points_list[0]
-            mp_x_last = (p_last["x"] + p_first["x"]) / 2
-            mp_y_last = (p_last["y"] + p_first["y"]) / 2
-            path_commands.append(f"T {mp_x_last} {mp_y_last}")
+    # Move to the first point
+    path_commands.append(f"M {adjusted_points[0]['x']} {adjusted_points[0]['y']}")
 
-            path_commands.append(
-                f"Q {p_first['x']} {p_first['y']}, {start_x} {start_y}"
-            )
+    if num_points == 2:
+        path_commands.append(f"L {adjusted_points[1]['x']} {adjusted_points[1]['y']}")
+    else:
+        # First segment (P0 to midpoint of P0 and P1)
+        p1 = adjusted_points[0]
+        p2 = adjusted_points[1]
+        mp_x = (p1["x"] + p2["x"]) / 2.0
+        mp_y = (p1["y"] + p2["y"]) / 2.0
+        path_commands.append(f"Q {p1['x']} {p1['y']}, {mp_x} {mp_y}")
+
+        # Intermediate segments (midpoint to midpoint, using current point as control)
+        for i in range(1, num_points - 1):
+            p1 = adjusted_points[i]
+            p2 = adjusted_points[i + 1]
+            mp_x = (p1["x"] + p2["x"]) / 2.0
+            mp_y = (p1["y"] + p2["y"]) / 2.0
+            path_commands.append(f"T {mp_x} {mp_y}")
+
+        # Last segment (midpoint between last and first, using last point as control)
+        p_last = adjusted_points[num_points - 1]
+        p_first = adjusted_points[0]
+        mp_x_last = (p_last["x"] + p_first["x"]) / 2.0
+        mp_y_last = (p_last["y"] + p_first["y"]) / 2.0
+        path_commands.append(f"T {mp_x_last} {mp_y_last}")
+
+        # Close the path back to the starting point, making sure to use the initial starting point
+        path_commands.append(
+            f"Q {p_first['x']} {p_first['y']}, {adjusted_points[0]['x']} {adjusted_points[0]['y']}"
+        )
 
     path_commands.append("Z")
     return " ".join(path_commands)
 
-
+# Function to process image data and landmarks, performing cropping and SVG generation
 def process_image_data_intensive(
     landmarks_data: Dict[str, Any],
-    original_image_base64_bytes: bytes,
-    # ,
-    # segmentation_map_base64_bytes: bytes
+    original_image_base64_bytes: bytes
+    # , segmentation_map_base64_bytes: bytes
 ):
 
+    # Placeholder for segmentation map bytes
     dummy_calculation_result = 0
 
+    # Simulate some intensive calculations to mimic the original code's complexity
     for i in range(100):
         for j in range(1000):
             dummy_calculation_result += (i * j) % 12345
 
+    # Process the original image and landmarks data
     rotated_and_cropped_image_base64_str = ""
+
+    # Initialize variables for image dimensions and crop offsets
     image_width, image_height = 0, 0
     crop_offset_x, crop_offset_y = 0, 0
 
     try:
+        # Decode the original image from base64
         image_bytes = base64.b64decode(original_image_base64_bytes)
+        # Open the image using PIL
         img = Image.open(BytesIO(image_bytes))
 
+        # Check if the image has EXIF data for orientation
         exif = img._getexif()
         if exif:
+            # Find the orientation tag ID
             for orientation_tag_id in ExifTags.TAGS.keys():
                 if ExifTags.TAGS[orientation_tag_id] == "Orientation":
                     break
             else:
                 orientation_tag_id = None
 
+            # Rotate the image based on the EXIF orientation tag
             if orientation_tag_id is not None and orientation_tag_id in exif:
                 if exif[orientation_tag_id] == 3:
                     img = img.rotate(180, expand=True)
@@ -96,11 +148,14 @@ def process_image_data_intensive(
                 elif exif[orientation_tag_id] == 8:
                     img = img.rotate(90, expand=True)
 
+        # Cropping Logic based on Landmarks
         landmarks_list_of_lists = landmarks_data.get("landmarks", [])
 
+        # Initialize min and max coordinates for cropping
         min_x, max_x = float("inf"), float("-inf")
         min_y, max_y = float("inf"), float("-inf")
 
+        # Iterate through the landmarks to find the bounding box
         for contour_group in landmarks_list_of_lists:
             for point_data in contour_group:
                 if (
@@ -113,13 +168,16 @@ def process_image_data_intensive(
                     min_y = min(min_y, point_data["y"])
                     max_y = max(max_y, point_data["y"])
 
+        # If no landmarks were found, use the full image dimensions
         current_img_width, current_img_height = img.size
 
+        # Calculate crop dimensions with padding
         crop_left = math.floor(max(0, min_x - CROP_PADDING))
         crop_top = math.floor(max(0, min_y - CROP_PADDING))
         crop_right = math.ceil(min(current_img_width, max_x + CROP_PADDING))
         crop_bottom = math.ceil(min(current_img_height, max_y + CROP_PADDING))
 
+        # Ensure crop dimensions are valid
         if (
             min_x == float("inf")
             or min_y == float("inf")
@@ -132,9 +190,13 @@ def process_image_data_intensive(
             cropped_img = img.crop((crop_left, crop_top, crop_right, crop_bottom))
             crop_offset_x, crop_offset_y = crop_left, crop_top
 
+        # Save the cropped image to a BytesIO buffer
         image_width, image_height = cropped_img.size
 
+        # Convert the cropped image to base64
         buffered = BytesIO()
+
+        # Attempt to save the image in its original format, fallback to JPEG if not available
         try:
             cropped_img.save(buffered, format=img.format if img.format else "JPEG")
         except KeyError:
@@ -145,6 +207,8 @@ def process_image_data_intensive(
 
     except Exception as e:
         # print(f"Error during image processing (rotation or cropping): {e}. Using original image data and dimensions.")
+
+        # If any error occurs, we will use the original image data and dimensions
         image_dimensions_from_landmarks = landmarks_data.get("dimensions", [1024, 1024])
         image_width, image_height = int(image_dimensions_from_landmarks[0]), int(
             image_dimensions_from_landmarks[1]
@@ -177,54 +241,112 @@ def process_image_data_intensive(
     # skin_mask = seg_img_pil.point(lambda p: 255 if p == SKIN_PIXEL_VALUE else 0)
     # Then use skin_mask to derive contours for the whole face.
 
+    # --- Extract and Process Landmark Data (and adjust for cropping) ---
     processed_landmarks_list_of_lists = []
-    for contour_group in landmarks_data.get("landmarks", []):
+    # Identify the nose region landmarks for exclusion
+    nose_landmarks_adjusted = []
+
+    # Assuming index 3 corresponds to the nose in your landmarks.txt structure
+    if len(landmarks_data.get("landmarks", [])) > 3:
+        # Original nose landmarks
+        original_nose_landmarks = landmarks_data["landmarks"][3]
+        # Adjust nose landmarks for cropping
+        for point_data in original_nose_landmarks:
+            if isinstance(point_data, dict) and "x" in point_data and "y" in point_data:
+                nose_landmarks_adjusted.append(
+                    {
+                        "x": point_data["x"] - crop_offset_x,
+                        "y": point_data["y"] - crop_offset_y,
+                    }
+                )
+
+    # Process each contour group in the landmarks data
+    for i, contour_group in enumerate(landmarks_data.get("landmarks", [])):
+
+        # Adjust each point in the contour group for cropping
         adjusted_contour_group = []
+
+        # If the contour group is empty, skip it
         for point_data in contour_group:
             if isinstance(point_data, dict) and "x" in point_data and "y" in point_data:
+                # Adjust the point coordinates based on the crop offsets
                 adjusted_contour_group.append(
                     {
                         "x": point_data["x"] - crop_offset_x,
                         "y": point_data["y"] - crop_offset_y,
                     }
                 )
+                
+        # Append the adjusted contour group to the processed landmarks list
         processed_landmarks_list_of_lists.append(adjusted_contour_group)
 
+    # Prepare the SVG content with clip paths for each region
     clip_path_defs = []
     image_clips = []
     generated_mask_contours_list = []
 
-    region_names = {0: "right_cheek", 1: "right_undereye", 2: "left_cheek", 3: "nose"}
+    # Define region names for the contours
+    region_names = {
+        0: "right_cheek",
+        1: "right_undereye",
+        2: "left_cheek",
+        3: "nose"               # Assuming 0 is right_cheek and 3 is nose
+        # , Add more regions as needed
+    }
 
+    # Iterate through the processed landmarks and create SVG clip paths
     for i, contour_group in enumerate(processed_landmarks_list_of_lists):
+
+        # Skip empty contour groups
         if not contour_group:
             continue
 
-        path_d_string = _points_to_smooth_svg_path(contour_group)
+        region_name = region_names.get(i, f"region_{i+1}")
+
+        # Apply exclusion logic for Region 0 (right_cheek) if it's supposed to avoid the nose
+        exclude_target_landmarks = None
+        # This is the conceptual part for "Region No.4 (right_cheek assuming index 0) should not intersect the nose"
+        if (
+            region_name == "right_cheek" and nose_landmarks_adjusted
+        ):  # Check if it's the right cheek and nose landmarks exist
+            exclude_target_landmarks = nose_landmarks_adjusted
+
+        # Convert the contour group to a smooth SVG path
+        path_d_string = _points_to_smooth_svg_path(contour_group, exclude_target_landmarks)
+
+        # If the path is empty, skip this contour
         raw_points = [
             [p["x"], p["y"]]
             for p in contour_group
             if isinstance(p, dict) and "x" in p and "y" in p
         ]
 
+        # Create a clip path ID based on the region name or index
         region_name = region_names.get(i, f"region_{i+1}")
+
+        # If the region name is not found, use a default name
         clip_id = f"mask_{region_name.replace(' ', '_')}"
 
+        # Create the clip path definition
         clip_path_defs.append(
             f'<clipPath id="{clip_id}"><path d="{path_d_string}" /></clipPath>'
         )
 
+        # Create the image clip with the rotated and cropped image
         image_clips.append(
             f'<image width="{image_width}" height="{image_height}" clip-path="url(#{clip_id})" xlink:href="data:image/jpeg;base64,{rotated_and_cropped_image_base64_str}" />'
         )
 
+        # Append the generated mask contour data
         generated_mask_contours_list.append(
             {"name": region_name, "path_d": path_d_string, "points": raw_points}
         )
 
+    # Join the clip path definitions and image clips into strings
     defs_content = "\n".join(clip_path_defs)
     clips_content = "\n".join(image_clips)
 
+    # Prepare the final SVG content
     final_svg_content = (
         f'<svg viewBox="0 0 {image_width} {image_height}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">\n'
         f"    <defs>\n"
@@ -236,8 +358,10 @@ def process_image_data_intensive(
         f"</svg>"
     )
 
+    # Encode the final SVG content to base64
     generated_svg_base64 = base64.b64encode(final_svg_content.encode("utf-8")).decode(
         "utf-8"
     )
 
+    # Return the base64 encoded SVG and the generated mask contours list
     return generated_svg_base64, generated_mask_contours_list

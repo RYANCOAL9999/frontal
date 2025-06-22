@@ -1,5 +1,6 @@
 from prometheus_client import Counter, Histogram
 
+# Counters for crop processing jobs
 job_total_counter = Counter(
     'crop_jobs_total',
     'Total number of crop processing jobs submitted.'

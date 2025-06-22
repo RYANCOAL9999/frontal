@@ -1,6 +1,7 @@
 from rich.console import Console
 from rich.theme import Theme
 
+# Custom theme for the console output
 custom_theme = Theme(
     {
         "info": "dim cyan",
@@ -13,4 +14,5 @@ custom_theme = Theme(
     }
 )
 
+# Create a console instance with the custom theme
 console = Console(theme=custom_theme, record=True, log_time_format="%H:%M:%S.%f")
