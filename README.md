@@ -8,25 +8,34 @@ This Readme provides instructions for setting up and running the full system for
 To set up and run the system, follow these steps:
 
 1. **Start the PostgreSQL Services:**  
-   Navigate to the databases directory and launch the PostgreSQL services using Docker Compose. This will start the necessary database containers in the background.  
+   Navigate to the databases directory and launch the PostgreSQL services using Docker Compose. This will start the necessary database containers in the background.
+  
    cd databases  
    chmod a+x startDatabases.sh  
    sh startDatabases.sh
 
-   Note: Ensure Docker and Docker Compose are installed and running on your system.  
-2. Grant Execution Permissions to Shell Scripts:  
+2. **Start the Prometheus Services:**  
+   Navigate to the Prometheus directory and launch the PostgreSQL services using Docker Compose. This will start the necessary database containers in the background.
+  
+   cd prometheus  
+   chmod a+x startPrometheus.sh  
+   sh startPrometheus.sh
+
+   Note: Ensure Docker and Docker Compose are installed and running on your system. 
+ 
+3. Grant Execution Permissions to Shell Scripts:  
    Navigate to the server directory and provide executable permissions to the following scripts: active.sh, deactivate.sh, and install.sh.  
    cd ../server  
    chmod a+x active.sh deactivate.sh install.sh
 
    Note: These scripts are essential for activating and installing necessary components of the backend service.  
-3. Run the active.sh and install.sh Scripts:  
+4. Run the active.sh and install.sh Scripts:  
    First, execute active.sh to activate the necessary services or configurations. Then, run install.sh to install any required dependencies and set up the environment.  
    sh active.sh  
    sh install.sh
 
    Note: These scripts must be run in sequence for proper initialization and setup of the backend.  
-4. Consider Cython for Performance (Optional but Recommended):  
+5. Consider Cython for Performance (Optional but Recommended):  
    The project includes a computationally intensive image processing component. By default, it will fall back to a pure Python implementation if the Cython-compiled version is not found. For optimal performance, especially in load testing or production scenarios, it is highly recommended to compile the Cython module.  
    * **Prerequisites:**  
      * Ensure Cython is installed (pip install Cython).  
@@ -38,7 +47,7 @@ To set up and run the system, follow these steps:
      sh compile\_image\_processor.sh
 
      This will create a compiled .so (Linux/macOS) or .pyd (Windows) file alongside image\_processor.pyx. The application will automatically detect and use this compiled version if available.  
-5. Grant Execution Permissions and Start the API Service:  
+6. Grant Execution Permissions and Start the API Service:  
    Navigate to the api directory and provide executable permissions to the startAPIService.sh script. This script will start the API service for the project.  
    cd api  
    chmod a+x startAPIService.sh  

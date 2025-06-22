@@ -3,5 +3,7 @@
 
 # Ensure Docker is installed and set up on your system.
 
-# Navigate to the directory containing the docker-compose.yml file
+# Navigate to the directory containing the docker-compose.yml file.
+
+# Don't run that if you want to start All Service.
 docker-compose up -d
