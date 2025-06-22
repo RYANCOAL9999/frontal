@@ -60,8 +60,8 @@ def _points_to_smooth_svg_path(points_list: List[Dict[str, float]]):
 
 
 def process_image_data_intensive(
-    landmarks_data: Dict[str, Any], 
-    original_image_base64_bytes: bytes
+    landmarks_data: Dict[str, Any],
+    original_image_base64_bytes: bytes,
     # ,
     # segmentation_map_base64_bytes: bytes
 ):
@@ -153,7 +153,7 @@ def process_image_data_intensive(
             "utf-8"
         )
         crop_offset_x, crop_offset_y = 0, 0
-    
+
     # --- Conceptual use of Segmentation Map ---
     # In a real scenario, you would parse the segmentation_map_base64_bytes here.
     # This would involve:
@@ -167,7 +167,7 @@ def process_image_data_intensive(
     #
     # For now, we will proceed with landmark-based contouring but indicate where
     # segmentation map logic would ideally be integrated for superior mask quality.
-    
+
     # Placeholder for segmentation map processing
     # print(f"Segmentation map bytes length: {len(segmentation_map_base64_bytes)}")
     # If we had pixel values, we could define masks here.
