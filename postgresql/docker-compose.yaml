@@ -1,0 +1,29 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16.2-alpine 
+    restart: always
+    environment:
+      POSTGRES_DB: fastapi_db 
+      POSTGRES_USER: postgres 
+      POSTGRES_PASSWORD: mysecretpassword 
+    ports:
+      - "5432:5432" 
+    volumes:
+      # Mount the 'db_data' named volume for persistent data storage
+      - db_data:/var/lib/postgresql/data
+      # Mount the init.sql script to initialize the database on first run
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fastapi_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  db_data:
+
+# networks:
+#   my_app_network:
+#     driver: bridge
