@@ -1,115 +1,108 @@
-import json
-from rich import print
-from database import get_db
-from typing import Dict, Any
+import uuid
+import asyncio
+from datetime import datetime
 from functools import lru_cache
 from sqlalchemy.orm import Session
-from models.crop_model import CropData, DBCropData
+from services.logger import console
+from drivers.database import get_db, SessionLocal
 from fastapi import APIRouter, HTTPException, status, Depends
+from models.crop_model import SubmitPayload, JobResponse, JobStatusResponse, DBCropJob
 
 router = APIRouter(
-    tags=["Frontal Crop"],
+    tags=["Frontal Crop Processing"],
 )
+
+job_queue: asyncio.Queue = asyncio.Queue()
 
 LRU_CACHE_MAXSIZE = 128
 
 
-@router.post("/crop/submit", summary="Submit a frontal crop for processing")
-async def submit_frontal_crop(data: CropData, db: Session = Depends(get_db)):
-    try:
-        get_frontal_crop_cached.cache_clear()
-        print("LRU cache cleared for get_frontal_crop.")
-
-        existing_crop = (
-            db.query(DBCropData).filter(DBCropData.image_id == data.image_id).first()
-        )
-
-        if existing_crop:
-            print(
-                f"Data for image_id: {data.image_id} already exists in DB. Reusing cached data."
-            )
-            return {
-                "message": "Frontal crop already processed, retrieving from cache!",
-                "received_data": CropData(
-                    image_id=existing_crop.image_id,
-                    crop_coordinates=json.loads(existing_crop.crop_coordinates_json),
-                    processing_options=existing_crop.processing_options,
-                ).dict(),
-                "status": "cached",
-            }
-
-        crop_coordinates_json_str = json.dumps(data.crop_coordinates)
-
-        db_crop_data = DBCropData(
-            image_id=data.image_id,
-            crop_coordinates_json=crop_coordinates_json_str,
-            processing_options=data.processing_options,
-        )
-        db.add(db_crop_data)
-        db.commit()
-        db.refresh(db_crop_data)
-
-        print(f"Stored new crop data for image_id: {data.image_id} in PostgreSQL.")
-
-        return {
-            "message": "Frontal crop submitted and stored successfully in PostgreSQL!",
-            "received_data": CropData(
-                image_id=db_crop_data.image_id,
-                crop_coordinates=json.loads(db_crop_data.crop_coordinates_json),
-                processing_options=db_crop_data.processing_options,
-            ).dict(),
-            "status": "stored",
-        }
-    except Exception as e:
-        db.rollback()
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"An error occurred during submission: {str(e)}",
-        )
-
-
 @lru_cache(maxsize=LRU_CACHE_MAXSIZE)
-def _get_crop_data_from_db_cached(image_id: str, db_session_factory):
+def _get_job_data_from_db_cached(job_id: str):
 
-    db = db_session_factory()
+    db = SessionLocal()  # Create a new session for this cached call
     try:
-        db_crop_data = (
-            db.query(DBCropData).filter(DBCropData.image_id == image_id).first()
-        )
-        if db_crop_data:
+        db_job = db.query(DBCropJob).filter(DBCropJob.job_id == job_id).first()
+        if db_job:
+            # Prepare a dictionary that can be used to construct the Pydantic model
             return {
-                "image_id": db_crop_data.image_id,
-                "crop_coordinates": json.loads(db_crop_data.crop_coordinates_json),
-                "processing_options": db_crop_data.processing_options,
+                "id": db_job.job_id,
+                "status": db_job.status,
+                "svg": db_job.svg_base64,
+                "mask_contours": db_job.mask_contours_json,
+                "error": (
+                    None if db_job.status != "failed" else "Job processing failed."
+                ),  # Dummy error msg
             }
         return None
     finally:
         db.close()
 
 
-@router.get(
-    "/crop/{image_id}",
-    summary="Retrieve crop data by image ID from PostgreSQL (cached)",
+@router.post(
+    "/crop/submit",
+    response_model=JobResponse,
+    summary="Submit a frontal crop for asynchronous processing",
 )
-async def get_frontal_crop_cached(image_id: str, db: Session = Depends(get_db)):
-    cached_data = _get_crop_data_from_db_cached(
-        image_id, db_session_factory=db.bind.metadata.bind.SessionLocal
-    )
+async def submit_frontal_crop(payload: SubmitPayload, db: Session = Depends(get_db)):
+    try:
+        _get_job_data_from_db_cached.cache_clear()
+        console.log("[info]LRU cache for job status cleared.[/info]")
 
-    if cached_data:
-        print(
-            f"Retrieved crop data for image_id: {image_id} from LRU cache or PostgreSQL."
+        existing_completed_job = (
+            db.query(DBCropJob)
+            .filter(
+                DBCropJob.image_base64 == payload.image, DBCropJob.status == "completed"
+            )
+            .first()
         )
 
-        return {
-            "message": "Crop data retrieved successfully!",
-            "crop_data": CropData(**cached_data).dict(),
-        }
-    else:
-        print(
-            f"No crop data found for image_id: {image_id} in LRU cache or PostgreSQL."
+        if existing_completed_job:
+            console.log(f"[success]Identical image already processed (Job ID: {existing_completed_job.job_id}). Returning cached result.[/success]")
+            return JobResponse(id=existing_completed_job.job_id, status="completed")
+
+        new_job_id = str(uuid.uuid4())
+
+        db_job = DBCropJob(
+            job_id=new_job_id,
+            image_base64=payload.image,
+            landmarks_json=[p.dict() for p in payload.landmarks],
+            segmentation_map_base64=payload.segmentation_map,
+            status="pending",
+            created_at=datetime.utcnow(),
         )
+        db.add(db_job)
+        db.commit()
+        db.refresh(db_job)
+
+        await job_queue.put(new_job_id)
+        console.log(f"[info]Job {new_job_id} submitted and added to queue.[/info]")
+
+        return JobResponse(id=new_job_id, status="pending")
+
+    except Exception as e:
+        db.rollback()
+        console.log(f"[error]An error occurred during job submission: {e}[/error]")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred during job submission: {str(e)}",
+        )
+
+
+@router.get(
+    "/crop/status/{job_id}",
+    response_model=JobStatusResponse,
+    summary="Retrieve the status and results of a crop processing job",
+)
+async def get_crop_job_status(job_id: str, db: Session = Depends(get_db)):
+    job_data_dict = _get_job_data_from_db_cached(job_id)
+
+    if not job_data_dict:
+        console.log(f"[warning]Job with ID '{job_id}' not found.[/warning]")
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No crop data found for image ID: {image_id}",
+            detail=f"Job with ID '{job_id}' not found.",
         )
+
+    console.log(f"[info]Retrieving status for job {job_id}. Status: {job_data_dict['status']}[/info]")
+    return JobStatusResponse(**job_data_dict)
