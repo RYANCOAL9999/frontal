@@ -1,12 +1,11 @@
 import asyncio
-import base64
 from datetime import datetime
 from typing import Dict, List
 from sqlalchemy.orm import Session
 from services.logger import console
 from routers.frontal import job_queue
+from models.crop_model import DBCropJob
 from drivers.database import engine, Base, SessionLocal
-from models.crop_model import DBCropJob, MaskContourDetail
 
 from services.metrics import (
     job_total_counter,
@@ -73,9 +72,7 @@ async def process_jobs_worker(job_queue: asyncio.Queue, db_session_factory, db_c
 
                 generated_svg_base64, generated_mask_contours_list = process_image_data_intensive(
                     landmarks_data=db_job.landmarks_json,
-                    original_image_base64_bytes=db_job.image_base64.encode('utf-8'), # Convert to bytes
-                    image_width=db_job.landmarks_json.get('dimensions', [1024, 1024])[0],
-                    image_height=db_job.landmarks_json.get('dimensions', [1024, 1024])[1]
+                    original_image_base64_bytes=db_job.image_base64.encode('utf-8')
                 )
 
                 db_job.svg_base64 = generated_svg_base64
