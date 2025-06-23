@@ -7,6 +7,15 @@ from typing import List, Dict, Any, Optional
 # Configuration for cropping
 CROP_PADDING = 50 # Pixels to add around the landmark bounding box
 
+# Define region names for the contours
+cdef dict region_names = {
+    0: "right_cheek",
+    1: "right_undereye",
+    2: "left_cheek",
+    3: "nose" # Assuming 0 is right_cheek and 3 is nose
+    # , Add more regions as needed
+}
+
 # Declare C functions with params for converting points to a smooth SVG PATH with High performance
 cdef float _points_to_smooth_svg_path_helper(list points_list, list path_commands, list exclude_region_landmarks_py):
 
@@ -48,8 +57,12 @@ cdef float _points_to_smooth_svg_path_helper(list points_list, list path_command
                 if dx == 0 and dy == 0:
                     dx, dy = 1.0, 1.0 # Prevent division by zero, use float
                 norm = math.sqrt(dx*dx + dy*dy)
-                adj_x = point['x'] + (dx/norm) * 5.0 # Move 5 pixels away
-                adj_y = point['y'] + (dy/norm) * 5.0
+                if norm == 0:
+                    adj_x = point["x"] + 5  # Arbitrarily move 5 pixels in x
+                    adj_y = point["y"] + 5  # Arbitrarily move 5 pixels in y
+                else:
+                    adj_x = point["x"] + (dx / norm) * 5  # Move 5 pixels away
+                    adj_y = point["y"] + (dy / norm) * 5
                 adjusted_points.append({'x': adj_x, 'y': adj_y})
             else:
                 adjusted_points.append(point)
@@ -83,6 +96,7 @@ cdef float _points_to_smooth_svg_path_helper(list points_list, list path_command
             p2 = adjusted_points[i+1]
             mp_x = (p1['x'] + p2['x']) / 2.0
             mp_y = (p1['y'] + p2['y']) / 2.0
+            # The SVG "T" command is a shorthand for smooth quadratic Bézier curves and requires a preceding "Q" command.
             path_commands.append(f"T {mp_x} {mp_y}")
 
         # Last segment (midpoint between last and first, using last point as control)
@@ -95,11 +109,31 @@ cdef float _points_to_smooth_svg_path_helper(list points_list, list path_command
         # Close the path back to the starting point, making sure to use the initial starting point
         path_commands.append(f"Q {p_first['x']} {p_first['y']}, {adjusted_points[0]['x']} {adjusted_points[0]['y']}")
 
+    # The "Z" command will close the path, so no need for an extra "Q" command here.
     path_commands.append("Z")
     return 1.0
 
+# Function to save the cropped image to a BytesIO buffer
+cdef _cropped_img_save(image: Image.Image, buffered: BytesIO, img_format: Optional[str]):
+    try:
+        image.save(buffered, format=img_format if img_format else "JPEG")
+    except Exception:
+        image.save(buffered, format="JPEG")
+
+# Function to simulate intensive calculations
+cdef _dummy_calculation():
+
+    # a dummy calculation to mimic the original code's complexity
+    dummy_calculation_result = 0
+
+    # Simulate some intensive calculations
+    for i in range(100):
+        for j in range(1000):
+            dummy_calculation_result += (i * j) % 12345
+
 # Declare C functions with params for processing image data and landmarks, performing cropping and SVG generation
 cpdef tuple process_image_data_intensive(
+    bool loadtest_mode_enabled,
     dict landmarks_data,
     bytes original_image_base64_bytes
     # , bytes segmentation_map_base64_bytes
@@ -110,7 +144,6 @@ cpdef tuple process_image_data_intensive(
     cdef list clip_path_defs
     cdef list image_clips
     cdef list generated_mask_contours_list
-    cdef dict region_names
     cdef list contour_group
     cdef str path_d_string
     cdef list raw_points
@@ -129,13 +162,9 @@ cpdef tuple process_image_data_intensive(
     cdef list nose_landmarks_adjusted = []
     cdef list exclude_target_landmarks_py = []  # Pass as Python list to helper
 
-    # Simulate a heavy computation
-    dummy_calculation_result = 0
-
-    # Simulate some intensive calculations to mimic the original code's complexity
-    for i in range(100):
-        for j in range(1000):
-            dummy_calculation_result += (i * j) % 12345
+    # Call the dummy calculation to simulate intensive processing
+    if not loadtest_mode_enabled:
+        _dummy_calculation()
 
     # Image Processing: Decode base64, Auto-rotate, and Crop 
     rotated_and_cropped_image_base64_str = "" # Initialize
@@ -207,10 +236,8 @@ cpdef tuple process_image_data_intensive(
         buffered = BytesIO()
 
         # Attempt to save the image in its original format, fallback to JPEG if not available
-        try:
-            cropped_img.save(buffered, format=img.format if img.format else "JPEG")
-        except KeyError:
-            cropped_img.save(buffered, format="JPEG")
+        buffered = BytesIO()
+        _cropped_img_save(cropped_img, buffered, img.format)
         rotated_and_cropped_image_base64_str = base64.b64encode(buffered.getvalue()).decode('utf-8')
 
     except Exception as e:
@@ -219,7 +246,7 @@ cpdef tuple process_image_data_intensive(
         image_width = int(image_dimensions[0])
         image_height = int(image_dimensions[1])
         rotated_and_cropped_image_base64_str = original_image_base64_bytes.decode('utf-8')
-        crop_offset_x, crop_offset_y = 0, 0
+        crop_offset_x, crop_offset_y = 0, 0 # No offset applied if cropping failed
 
     # Conceptual use of Segmentation Map 
     # Decoding the segmentation map (for conceptual use)
@@ -268,16 +295,7 @@ cpdef tuple process_image_data_intensive(
     clip_path_defs = []
     image_clips = []
     generated_mask_contours_list = []
-
-    # Define region names for the contours
-    region_names = {
-        0: "right_cheek", 
-        1: "right_undereye", 
-        2: "left_cheek", 
-        3: "nose"               # Assuming 0 is right_cheek and 3 is nose
-        # , Add more regions as needed
-    }
-
+    
     # Iterate through the processed landmarks and create SVG clip paths
     for i in range(len(processed_landmarks_list_of_lists)): # Use adjusted landmarks
         contour_group_adjusted = processed_landmarks_list_of_lists[i]

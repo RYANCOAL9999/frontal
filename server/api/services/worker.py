@@ -111,6 +111,7 @@ async def process_jobs_worker(
                 # Process the image data using the imported function
                 generated_svg_base64, generated_mask_contours_list = (
                     process_image_data_intensive(
+                        loadtest_mode_enabled,
                         landmarks_data=db_job.landmarks_json,
                         original_image_base64_bytes=db_job.image_base64.encode("utf-8"),
                         # ,

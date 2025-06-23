@@ -7,6 +7,14 @@ from typing import List, Dict, Any, Optional
 # Constants for cropping
 CROP_PADDING = 50  # Padding around the detected landmarks for cropping
 
+# Define region names for the contours
+region_names = {
+    0: "right_cheek",
+    1: "right_undereye",
+    2: "left_cheek",
+    3: "nose",  # Assuming 0 is right_cheek and 3 is nose
+    # , Add more regions as needed
+}
 
 # Helper function to convert points to a smooth SVG path
 def _points_to_smooth_svg_path(
@@ -50,8 +58,12 @@ def _points_to_smooth_svg_path(
                 if dx == 0 and dy == 0:
                     dx, dy = 1, 1  # Prevent division by zero
                 norm = math.sqrt(dx * dx + dy * dy)
-                adj_x = point["x"] + (dx / norm) * 5  # Move 5 pixels away
-                adj_y = point["y"] + (dy / norm) * 5
+                if norm == 0:
+                    adj_x = point["x"] + 5  # Arbitrarily move 5 pixels in x
+                    adj_y = point["y"] + 5  # Arbitrarily move 5 pixels in y
+                else:
+                    adj_x = point["x"] + (dx / norm) * 5  # Move 5 pixels away
+                    adj_y = point["y"] + (dy / norm) * 5
                 adjusted_points.append({"x": adj_x, "y": adj_y})
             else:
                 adjusted_points.append(point)
@@ -84,6 +96,7 @@ def _points_to_smooth_svg_path(
             p2 = adjusted_points[i + 1]
             mp_x = (p1["x"] + p2["x"]) / 2.0
             mp_y = (p1["y"] + p2["y"]) / 2.0
+            # The SVG "T" command is a shorthand for smooth quadratic Bézier curves and requires a preceding "Q" command.
             path_commands.append(f"T {mp_x} {mp_y}")
 
         # Last segment (midpoint between last and first, using last point as control)
@@ -93,28 +106,41 @@ def _points_to_smooth_svg_path(
         mp_y_last = (p_last["y"] + p_first["y"]) / 2.0
         path_commands.append(f"T {mp_x_last} {mp_y_last}")
 
-        # Close the path back to the starting point, making sure to use the initial starting point
-        path_commands.append(
-            f"Q {p_first['x']} {p_first['y']}, {adjusted_points[0]['x']} {adjusted_points[0]['y']}"
-        )
-
+    # The "Z" command will close the path, so no need for an extra "Q" command here.
     path_commands.append("Z")
     return " ".join(path_commands)
 
-# Function to process image data and landmarks, performing cropping and SVG generation
-def process_image_data_intensive(
-    landmarks_data: Dict[str, Any],
-    original_image_base64_bytes: bytes
-    # , segmentation_map_base64_bytes: bytes
-):
 
-    # Placeholder for segmentation map bytes
+# Function to save the cropped image to a BytesIO buffer
+def _cropped_img_save(image: Image.Image, buffered: BytesIO, format: Optional[str]):
+    try:
+        image.save(buffered, format=format if format else "JPEG")
+    except Exception:
+        image.save(buffered, format="JPEG")
+
+# Function to simulate intensive calculations
+def _dummy_calculation():
+    # dummy calculation to mimic the original code's complexity
     dummy_calculation_result = 0
 
-    # Simulate some intensive calculations to mimic the original code's complexity
+    # Simulate some intensive calculations
     for i in range(100):
         for j in range(1000):
             dummy_calculation_result += (i * j) % 12345
+
+
+
+# Function to process image data and landmarks, performing cropping and SVG generation
+def process_image_data_intensive(
+    loadtest_mode_enabled: bool,
+    landmarks_data: Dict[str, Any],
+    original_image_base64_bytes: bytes,
+    # , segmentation_map_base64_bytes: bytes
+):
+
+    # Calling the dummy calculation to simulate intensive processing
+    if not loadtest_mode_enabled:
+        _dummy_calculation()
 
     # Process the original image and landmarks data
     rotated_and_cropped_image_base64_str = ""
@@ -197,10 +223,8 @@ def process_image_data_intensive(
         buffered = BytesIO()
 
         # Attempt to save the image in its original format, fallback to JPEG if not available
-        try:
-            cropped_img.save(buffered, format=img.format if img.format else "JPEG")
-        except KeyError:
-            cropped_img.save(buffered, format="JPEG")
+        _cropped_img_save(cropped_img, buffered, img.format)
+
         rotated_and_cropped_image_base64_str = base64.b64encode(
             buffered.getvalue()
         ).decode("utf-8")
@@ -276,7 +300,7 @@ def process_image_data_intensive(
                         "y": point_data["y"] - crop_offset_y,
                     }
                 )
-                
+
         # Append the adjusted contour group to the processed landmarks list
         processed_landmarks_list_of_lists.append(adjusted_contour_group)
 
@@ -284,15 +308,6 @@ def process_image_data_intensive(
     clip_path_defs = []
     image_clips = []
     generated_mask_contours_list = []
-
-    # Define region names for the contours
-    region_names = {
-        0: "right_cheek",
-        1: "right_undereye",
-        2: "left_cheek",
-        3: "nose"               # Assuming 0 is right_cheek and 3 is nose
-        # , Add more regions as needed
-    }
 
     # Iterate through the processed landmarks and create SVG clip paths
     for i, contour_group in enumerate(processed_landmarks_list_of_lists):
@@ -305,6 +320,7 @@ def process_image_data_intensive(
 
         # Apply exclusion logic for Region 0 (right_cheek) if it's supposed to avoid the nose
         exclude_target_landmarks = None
+
         # This is the conceptual part for "Region No.4 (right_cheek assuming index 0) should not intersect the nose"
         if (
             region_name == "right_cheek" and nose_landmarks_adjusted
@@ -312,7 +328,9 @@ def process_image_data_intensive(
             exclude_target_landmarks = nose_landmarks_adjusted
 
         # Convert the contour group to a smooth SVG path
-        path_d_string = _points_to_smooth_svg_path(contour_group, exclude_target_landmarks)
+        path_d_string = _points_to_smooth_svg_path(
+            contour_group, exclude_target_landmarks
+        )
 
         # If the path is empty, skip this contour
         raw_points = [
@@ -320,9 +338,6 @@ def process_image_data_intensive(
             for p in contour_group
             if isinstance(p, dict) and "x" in p and "y" in p
         ]
-
-        # Create a clip path ID based on the region name or index
-        region_name = region_names.get(i, f"region_{i+1}")
 
         # If the region name is not found, use a default name
         clip_id = f"mask_{region_name.replace(' ', '_')}"
