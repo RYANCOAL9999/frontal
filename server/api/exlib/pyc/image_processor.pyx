@@ -310,9 +310,9 @@ cpdef tuple process_image_data_intensive(
         # Apply exclusion logic for Region 0 (right_cheek) if it's supposed to avoid the nose
         # Pass exclude_target_landmarks_py as a Python list to the cpdef helper function
         if region_name == "right_cheek" and nose_landmarks_adjusted:
-             exclude_target_landmarks_py = nose_landmarks_adjusted
+            exclude_target_landmarks_py = nose_landmarks_adjusted
         else:
-             exclude_target_landmarks_py = [] # No exclusion
+            exclude_target_landmarks_py = [] # No exclusion
 
         # Convert the contour group to a smooth SVG path
         cdef list current_path_commands = []
