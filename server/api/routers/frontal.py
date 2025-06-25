@@ -1,5 +1,6 @@
 import uuid
 import asyncio
+from typing import Dict
 from datetime import datetime
 from functools import lru_cache
 from sqlalchemy.orm import Session
@@ -19,9 +20,10 @@ job_queue: asyncio.Queue = asyncio.Queue()
 # Maximum size for the LRU cache to store job data
 LRU_CACHE_MAXSIZE = 128
 
+
 # Helper function to get job data from DB, intended to be cached with background task.
 @lru_cache(maxsize=LRU_CACHE_MAXSIZE)
-def _get_job_data_from_db_cached(job_id: str):
+def _get_job_data_from_db_cached(job_id: str) -> Dict[str, str]:
 
     db = SessionLocal()  # Create a new session for this cached call
     try:
@@ -42,13 +44,16 @@ def _get_job_data_from_db_cached(job_id: str):
     finally:
         db.close()
 
+
 # crop submission endpoint
 @router.post(
     "/crop/submit",
     response_model=JobResponse,
     summary="Submit a frontal crop for asynchronous processing",
 )
-async def submit_frontal_crop(payload: SubmitPayload, db: Session = Depends(get_db)):
+async def submit_frontal_crop(
+    payload: SubmitPayload, db: Session = Depends(get_db)
+) -> JobResponse:
     try:
         # Clear the LRU cache to ensure fresh data
         _get_job_data_from_db_cached.cache_clear()
@@ -65,7 +70,9 @@ async def submit_frontal_crop(payload: SubmitPayload, db: Session = Depends(get_
 
         # If an identical image has been processed, return the cached job ID
         if existing_completed_job:
-            console.log(f"[success]Identical image already processed (Job ID: {existing_completed_job.job_id}). Returning cached result.[/success]")
+            console.log(
+                f"[success]Identical image already processed (Job ID: {existing_completed_job.job_id}). Returning cached result.[/success]"
+            )
             return JobResponse(id=existing_completed_job.job_id, status="completed")
 
         # If the image is not cached, create a new job
@@ -81,14 +88,14 @@ async def submit_frontal_crop(payload: SubmitPayload, db: Session = Depends(get_
             created_at=datetime.utcnow(),
         )
         db.add(db_job)
-        db.commit() # Commit the new job to the database
+        db.commit()  # Commit the new job to the database
         db.refresh(db_job)  # Refresh the job to get the latest state
 
         # Add the new job ID to the job queue for processing
         await job_queue.put(new_job_id)
         console.log(f"[info]Job {new_job_id} submitted and added to queue.[/info]")
 
-        # Return the job response with the new job ID    
+        # Return the job response with the new job ID
         return JobResponse(id=new_job_id, status="pending")
 
     except Exception as e:
@@ -100,13 +107,16 @@ async def submit_frontal_crop(payload: SubmitPayload, db: Session = Depends(get_
             detail=f"An error occurred during job submission: {str(e)}",
         )
 
+
 # get crop status endpoint
 @router.get(
     "/crop/status/{job_id}",
     response_model=JobStatusResponse,
     summary="Retrieve the status and results of a crop processing job",
 )
-async def get_crop_job_status(job_id: str, db: Session = Depends(get_db)):
+async def get_crop_job_status(
+    job_id: str, db: Session = Depends(get_db)
+) -> JobStatusResponse:
 
     # Attempt to retrieve job data using the LRU cached helper function
     job_data_dict = _get_job_data_from_db_cached(job_id)
@@ -120,5 +130,7 @@ async def get_crop_job_status(job_id: str, db: Session = Depends(get_db)):
         )
 
     # If the job is still pending, return the status
-    console.log(f"[info]Retrieving status for job {job_id}. Status: {job_data_dict['status']}[/info]")
+    console.log(
+        f"[info]Retrieving status for job {job_id}. Status: {job_data_dict['status']}[/info]"
+    )
     return JobStatusResponse(**job_data_dict)

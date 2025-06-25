@@ -25,7 +25,7 @@ from services.logger import console
 # alongside image_processor.pyx in exlib/pyc.
 try:
     from pyc import image_processor
-    
+
     console.log(
         "[bold green]Successfully imported Cythonized image_processor from pyc.[/bold green]"
     )
@@ -37,16 +37,19 @@ except ImportError:
         "[bold yellow]Cythonized image_processor not found. Using pure Python version from py.[/bold yellow]"
     )
 
-def create_test_image(width=100, height=100, color=(255, 0, 0)):
+
+def create_test_image(width=100, height=100, color=(255, 0, 0)) -> bytes:
     img = Image.new("RGB", (width, height), color)
     buf = BytesIO()
     img.save(buf, format="JPEG")
     return buf.getvalue()
 
-def encode_image_to_base64_bytes(img_bytes):
+
+def encode_image_to_base64_bytes(img_bytes) -> bytes:
     return base64.b64encode(img_bytes)
 
-def test__cropped_img_save_jpeg(tmp_path):
+
+def test__cropped_img_save_jpeg(tmp_path) -> None:
     img = Image.new("RGB", (10, 10), (123, 222, 111))
     buf = BytesIO()
     image_processor._cropped_img_save(img, buf, "JPEG")
@@ -54,7 +57,8 @@ def test__cropped_img_save_jpeg(tmp_path):
     loaded = Image.open(buf)
     assert loaded.size == (10, 10)
 
-def test__cropped_img_save_fallback_to_jpeg(tmp_path):
+
+def test__cropped_img_save_fallback_to_jpeg(tmp_path) -> None:
     img = Image.new("RGB", (10, 10), (123, 222, 111))
     buf = BytesIO()
     # Use an invalid format to trigger fallback
@@ -63,9 +67,11 @@ def test__cropped_img_save_fallback_to_jpeg(tmp_path):
     loaded = Image.open(buf)
     assert loaded.size == (10, 10)
 
-def test__dummy_calculation_runs():
+
+def test__dummy_calculation_runs() -> None:
     # Just ensure it runs without error
     image_processor._dummy_calculation()
+
 
 @pytest.mark.parametrize(
     "points,exclude,expected_start",
@@ -79,23 +85,30 @@ def test__dummy_calculation_runs():
         ),
     ],
 )
-def test__points_to_smooth_svg_path_basic(points, exclude, expected_start):
+def test__points_to_smooth_svg_path_basic(points, exclude, expected_start) -> None:
     result = image_processor._points_to_smooth_svg_path(points, exclude)
     assert result.startswith(expected_start.split()[0])
 
-def test__points_to_smooth_svg_path_with_exclusion():
+
+def test__points_to_smooth_svg_path_with_exclusion() -> None:
     points = [{"x": 50, "y": 50}, {"x": 60, "y": 50}, {"x": 60, "y": 60}]
     exclude = [{"x": 55, "y": 55}]
     result = image_processor._points_to_smooth_svg_path(points, exclude)
     # Should adjust points away from exclusion center
     assert "M" in result and "Q" in result
 
-def test__process_image_decoding_and_cropping_basic():
+
+def test__process_image_decoding_and_cropping_basic() -> None:
     img_bytes = create_test_image(100, 100)
     img_b64 = encode_image_to_base64_bytes(img_bytes)
     landmarks = {
         "landmarks": [
-            [{"x": 10, "y": 10}, {"x": 90, "y": 10}, {"x": 90, "y": 90}, {"x": 10, "y": 90}]
+            [
+                {"x": 10, "y": 10},
+                {"x": 90, "y": 10},
+                {"x": 90, "y": 90},
+                {"x": 10, "y": 90},
+            ]
         ]
     }
     result = image_processor._process_image_decoding_and_cropping(img_b64, landmarks)
@@ -104,39 +117,68 @@ def test__process_image_decoding_and_cropping_basic():
     assert w > 0 and h > 0
     assert off_x >= 0 and off_y >= 0
 
-def test__process_image_decoding_and_cropping_error(monkeypatch):
+
+def test__process_image_decoding_and_cropping_error(monkeypatch) -> None:
     # Pass invalid image data to trigger exception
     bad_img_b64 = b"not_base64"
     landmarks = {"dimensions": [123, 456]}
-    result = image_processor._process_image_decoding_and_cropping(bad_img_b64, landmarks)
+    result = image_processor._process_image_decoding_and_cropping(
+        bad_img_b64, landmarks
+    )
     b64_str, w, h, off_x, off_y = result
     assert w == 123 and h == 456
     assert off_x == 0 and off_y == 0
 
-def test__generate_final_svg_content():
+
+def test__generate_final_svg_content() -> None:
     svg = image_processor._generate_final_svg_content(
-        100, 200, ['<clipPath id="a"></clipPath>'], ['<image width="100" height="200"/>']
+        100,
+        200,
+        ['<clipPath id="a"></clipPath>'],
+        ['<image width="100" height="200"/>'],
     )
-    assert svg.startswith('<svg')
-    assert 'clipPath' in svg
-    assert 'image' in svg
+    assert svg.startswith("<svg")
+    assert "clipPath" in svg
+    assert "image" in svg
     assert 'width="100"' in svg
     assert 'height="200"' in svg
 
-def test__extract_raw_points():
+
+def test__extract_raw_points() -> None:
     contour = [{"x": 1, "y": 2}, {"x": 3, "y": 4}]
     points = image_processor._extract_raw_points(contour)
     assert points == [[1, 2], [3, 4]]
 
-def test_process_image_data_intensive_basic():
+
+def test_process_image_data_intensive_basic() -> None:
     img_bytes = create_test_image(100, 100)
     img_b64 = encode_image_to_base64_bytes(img_bytes)
     landmarks = {
         "landmarks": [
-            [{"x": 10, "y": 10}, {"x": 90, "y": 10}, {"x": 90, "y": 90}, {"x": 10, "y": 90}],
-            [{"x": 20, "y": 20}, {"x": 80, "y": 20}, {"x": 80, "y": 80}, {"x": 20, "y": 80}],
-            [{"x": 30, "y": 30}, {"x": 70, "y": 30}, {"x": 70, "y": 70}, {"x": 30, "y": 70}],
-            [{"x": 40, "y": 40}, {"x": 60, "y": 40}, {"x": 60, "y": 60}, {"x": 40, "y": 60}],
+            [
+                {"x": 10, "y": 10},
+                {"x": 90, "y": 10},
+                {"x": 90, "y": 90},
+                {"x": 10, "y": 90},
+            ],
+            [
+                {"x": 20, "y": 20},
+                {"x": 80, "y": 20},
+                {"x": 80, "y": 80},
+                {"x": 20, "y": 80},
+            ],
+            [
+                {"x": 30, "y": 30},
+                {"x": 70, "y": 30},
+                {"x": 70, "y": 70},
+                {"x": 30, "y": 70},
+            ],
+            [
+                {"x": 40, "y": 40},
+                {"x": 60, "y": 40},
+                {"x": 60, "y": 60},
+                {"x": 40, "y": 60},
+            ],
         ]
     }
     svg_b64, mask_contours = image_processor.process_image_data_intensive(

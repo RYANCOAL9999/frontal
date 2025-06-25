@@ -20,9 +20,13 @@ API_MAJOR_VERSION = API_FULL_VERSION.split(".")[0]
 # Check if load testing mode is enabled via environment variable
 LOADTEST_MODE_ENABLED = os.getenv("LOADTEST_MODE", "false").lower() == "true"
 if LOADTEST_MODE_ENABLED:
-    console.log("[bold magenta]Load testing mode is ENABLED: Processing delay will be skipped.[/bold magenta]")
+    console.log(
+        "[bold magenta]Load testing mode is ENABLED: Processing delay will be skipped.[/bold magenta]"
+    )
 else:
-    console.log("[dim cyan]Load testing mode is DISABLED: Processing delay will be active.[/dim cyan]")
+    console.log(
+        "[dim cyan]Load testing mode is DISABLED: Processing delay will be active.[/dim cyan]"
+    )
 
 # Initialize FastAPI application with title, description, and version
 app = FastAPI(
@@ -40,36 +44,42 @@ app.add_middleware(
     skip_paths=["/metrics"],
 )
 
+
 # Endpoint to expose Prometheus metrics
 @app.get("/metrics", include_in_schema=False)
-async def metrics():
+async def metrics() -> str:
     return handle_metrics(generate_latest())
+
 
 # Startup and shutdown events for the FastAPI application
 @app.on_event("startup")
-async def startup_event():
+async def startup_event() -> None:
     console.log("[bold green]Application startup initiated.[/bold green]")
     await startup_db_and_worker(app, LOADTEST_MODE_ENABLED)
     console.log("[bold green]Application startup complete.[/bold green]")
 
+
 # Shutdown event to gracefully stop the worker
 @app.on_event("shutdown")
-async def shutdown_event():
+async def shutdown_event() -> None:
     console.log("[bold red]Application shutdown initiated.[/bold red]")
     await shutdown_worker(app)
     console.log("[bold red]Application shutdown complete.[/bold red]")
 
+
 # Include the frontal router with the specified API version prefix
 app.include_router(frontal.router, prefix=f"/api/v{API_MAJOR_VERSION}/frontal")
 
+
 # Root endpoint to provide basic information about the API
 @app.get("/")
-async def read_root(request: Request):
+async def read_root(request: Request) -> dict:
     return {
         "message": "Welcome to the frontal API!",
         "api_version": API_FULL_VERSION,
         "docs_url": f"{str(request.url)}docs",
     }
+
 
 # Main entry point to run the FastAPI application using Uvicorn
 if __name__ == "__main__":

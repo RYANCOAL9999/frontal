@@ -18,7 +18,11 @@ region_names = {
 
 
 # Function to save the cropped image to a BytesIO buffer
-def _cropped_img_save(image: Image.Image, buffered: BytesIO, format: Optional[str]):
+def _cropped_img_save(
+    image: Image.Image, 
+    buffered: BytesIO, 
+    format: Optional[str]
+) -> None:
     try:
         image.save(buffered, format=format if format else "JPEG")
     except Exception:
@@ -26,7 +30,9 @@ def _cropped_img_save(image: Image.Image, buffered: BytesIO, format: Optional[st
 
 
 # Function to simulate intensive calculations
-def _dummy_calculation():
+def _dummy_calculation(
+        
+) -> None:
     # dummy calculation to mimic the original code's complexity
     dummy_calculation_result = 0
 
@@ -40,7 +46,7 @@ def _dummy_calculation():
 def _points_to_smooth_svg_path(
     points_list: List[Dict[str, float]],
     exclude_region_landmarks: Optional[List[Dict[str, float]]] = None,
-):
+) -> str:
 
     # Ensure points_list is not empty
     if not points_list:
@@ -133,7 +139,8 @@ def _points_to_smooth_svg_path(
 
 # New function to encapsulate image decoding and cropping logic
 def _process_image_decoding_and_cropping(
-    original_image_base64_bytes: bytes, landmarks_data: Dict[str, Any]
+    original_image_base64_bytes: bytes, 
+    landmarks_data: Dict[str, Any]
 ) -> Tuple[str, int, int, int, int]:
 
     image_width, image_height = 0, 0
@@ -248,7 +255,9 @@ def _generate_final_svg_content(
     return final_svg_content
 
 
-def _extract_raw_points(contour_group: List[Dict[str, float]]) -> List[List[float]]:
+def _extract_raw_points(
+    contour_group: List[Dict[str, float]]
+) -> List[List[float]]:
     raw_points = [
         [p["x"], p["y"]]
         for p in contour_group
@@ -263,8 +272,7 @@ def process_image_data_intensive(
     landmarks_data: Dict[str, Any],
     original_image_base64_bytes: bytes,
     # , segmentation_map_base64_bytes: bytes
-):
-
+) -> Tuple[str, List[Dict[str, Any]]]:
     # Calling the dummy calculation to simulate intensive processing
     if not loadtest_mode_enabled:
         _dummy_calculation()

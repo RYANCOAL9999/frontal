@@ -54,7 +54,7 @@ async def process_jobs_worker(
     db_session_factory,
     db_crop_job_model,
     loadtest_mode_enabled: bool,
-):
+) -> None:
 
     # Start the worker loop to process jobs from the queue
     while True:
@@ -169,7 +169,7 @@ async def process_jobs_worker(
 
 
 # Startup and Shutdown Functions for the Worker
-async def startup_db_and_worker(app_instance, loadtest_mode_enabled: bool):
+async def startup_db_and_worker(app_instance, loadtest_mode_enabled: bool) -> None:
 
     console.log("[info]Creating database tables if they don't exist...[/info]")
     # Create the database tables if they do not exist
@@ -185,7 +185,7 @@ async def startup_db_and_worker(app_instance, loadtest_mode_enabled: bool):
 
 
 # Shutdown function to cancel the worker task gracefully
-async def shutdown_worker(app_instance):
+async def shutdown_worker(app_instance) -> None:
 
     # Check if the worker task exists and cancel it
     if hasattr(app_instance.state, "job_processing_task"):

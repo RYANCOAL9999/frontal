@@ -1,23 +1,25 @@
-import asyncio
-import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timedelta
 import sys
+import pytest
+import asyncio
 from server.api.services import worker
+from unittest.mock import MagicMock, patch
 
 # Patch sys.modules to allow import of process_jobs_worker from worker.py
-with patch.dict(sys.modules, {
-    "services.logger": MagicMock(),
-    "routers.frontal": MagicMock(),
-    "models.crop_model": MagicMock(),
-    "drivers.database": MagicMock(),
-    "services.metrics": MagicMock(),
-    "exlib.pyc.image_processor": MagicMock(),
-    "exlib.py.image_processor": MagicMock(),
-}):
+with patch.dict(
+    sys.modules,
+    {
+        "services.logger": MagicMock(),
+        "routers.frontal": MagicMock(),
+        "models.crop_model": MagicMock(),
+        "drivers.database": MagicMock(),
+        "services.metrics": MagicMock(),
+        "exlib.pyc.image_processor": MagicMock(),
+        "exlib.py.image_processor": MagicMock(),
+    },
+):
 
     @pytest.mark.asyncio
-    async def test_process_jobs_worker_job_not_found(monkeypatch):
+    async def test_process_jobs_worker_job_not_found(monkeypatch) -> None:
         # Setup
         job_queue = asyncio.Queue()
         await job_queue.put("job1")
@@ -32,7 +34,9 @@ with patch.dict(sys.modules, {
         monkeypatch.setattr(worker, "job_total_counter", MagicMock(inc=MagicMock()))
         monkeypatch.setattr(worker, "job_failed_counter", MagicMock(inc=MagicMock()))
         monkeypatch.setattr(worker, "job_completed_counter", MagicMock(inc=MagicMock()))
-        monkeypatch.setattr(worker, "job_processing_duration_seconds", MagicMock(observe=MagicMock()))
+        monkeypatch.setattr(
+            worker, "job_processing_duration_seconds", MagicMock(observe=MagicMock())
+        )
         monkeypatch.setattr(worker, "console", MagicMock())
 
         # Patch process_image_data_intensive to not be called
@@ -40,7 +44,12 @@ with patch.dict(sys.modules, {
 
         # Run worker for one iteration (it will continue forever, so we cancel after one)
         task = asyncio.create_task(
-            worker.process_jobs_worker(job_queue, db_session_factory, db_crop_job_model, loadtest_mode_enabled=True)
+            worker.process_jobs_worker(
+                job_queue,
+                db_session_factory,
+                db_crop_job_model,
+                loadtest_mode_enabled=True,
+            )
         )
         await asyncio.sleep(0.1)
         task.cancel()
@@ -53,7 +62,7 @@ with patch.dict(sys.modules, {
         assert worker.job_failed_counter.inc.called
 
     @pytest.mark.asyncio
-    async def test_process_jobs_worker_job_already_completed(monkeypatch):
+    async def test_process_jobs_worker_job_already_completed(monkeypatch) -> None:
         job_queue = asyncio.Queue()
         await job_queue.put("job2")
 
@@ -67,12 +76,19 @@ with patch.dict(sys.modules, {
         monkeypatch.setattr(worker, "job_total_counter", MagicMock(inc=MagicMock()))
         monkeypatch.setattr(worker, "job_failed_counter", MagicMock(inc=MagicMock()))
         monkeypatch.setattr(worker, "job_completed_counter", MagicMock(inc=MagicMock()))
-        monkeypatch.setattr(worker, "job_processing_duration_seconds", MagicMock(observe=MagicMock()))
+        monkeypatch.setattr(
+            worker, "job_processing_duration_seconds", MagicMock(observe=MagicMock())
+        )
         monkeypatch.setattr(worker, "console", MagicMock())
         monkeypatch.setattr(worker, "process_image_data_intensive", MagicMock())
 
         task = asyncio.create_task(
-            worker.process_jobs_worker(job_queue, db_session_factory, db_crop_job_model, loadtest_mode_enabled=True)
+            worker.process_jobs_worker(
+                job_queue,
+                db_session_factory,
+                db_crop_job_model,
+                loadtest_mode_enabled=True,
+            )
         )
         await asyncio.sleep(0.1)
         task.cancel()
@@ -84,7 +100,7 @@ with patch.dict(sys.modules, {
         assert worker.job_completed_counter.inc.called
 
     @pytest.mark.asyncio
-    async def test_process_jobs_worker_success(monkeypatch):
+    async def test_process_jobs_worker_success(monkeypatch) -> None:
         job_queue = asyncio.Queue()
         await job_queue.put("job3")
 
@@ -100,13 +116,22 @@ with patch.dict(sys.modules, {
         monkeypatch.setattr(worker, "job_total_counter", MagicMock(inc=MagicMock()))
         monkeypatch.setattr(worker, "job_failed_counter", MagicMock(inc=MagicMock()))
         monkeypatch.setattr(worker, "job_completed_counter", MagicMock(inc=MagicMock()))
-        monkeypatch.setattr(worker, "job_processing_duration_seconds", MagicMock(observe=MagicMock()))
+        monkeypatch.setattr(
+            worker, "job_processing_duration_seconds", MagicMock(observe=MagicMock())
+        )
         monkeypatch.setattr(worker, "console", MagicMock())
-        process_image_mock = MagicMock(return_value=("svgbase64", ["contour1", "contour2"]))
+        process_image_mock = MagicMock(
+            return_value=("svgbase64", ["contour1", "contour2"])
+        )
         monkeypatch.setattr(worker, "process_image_data_intensive", process_image_mock)
 
         task = asyncio.create_task(
-            worker.process_jobs_worker(job_queue, db_session_factory, db_crop_job_model, loadtest_mode_enabled=True)
+            worker.process_jobs_worker(
+                job_queue,
+                db_session_factory,
+                db_crop_job_model,
+                loadtest_mode_enabled=True,
+            )
         )
         await asyncio.sleep(0.1)
         task.cancel()
@@ -123,7 +148,7 @@ with patch.dict(sys.modules, {
         assert db_job.status == "completed"
 
     @pytest.mark.asyncio
-    async def test_process_jobs_worker_exception(monkeypatch):
+    async def test_process_jobs_worker_exception(monkeypatch) -> None:
         job_queue = asyncio.Queue()
         await job_queue.put("job4")
 
@@ -139,13 +164,24 @@ with patch.dict(sys.modules, {
         monkeypatch.setattr(worker, "job_total_counter", MagicMock(inc=MagicMock()))
         monkeypatch.setattr(worker, "job_failed_counter", MagicMock(inc=MagicMock()))
         monkeypatch.setattr(worker, "job_completed_counter", MagicMock(inc=MagicMock()))
-        monkeypatch.setattr(worker, "job_processing_duration_seconds", MagicMock(observe=MagicMock()))
+        monkeypatch.setattr(
+            worker, "job_processing_duration_seconds", MagicMock(observe=MagicMock())
+        )
         monkeypatch.setattr(worker, "console", MagicMock())
         # Raise exception in process_image_data_intensive
-        monkeypatch.setattr(worker, "process_image_data_intensive", MagicMock(side_effect=Exception("fail")))
+        monkeypatch.setattr(
+            worker,
+            "process_image_data_intensive",
+            MagicMock(side_effect=Exception("fail")),
+        )
 
         task = asyncio.create_task(
-            worker.process_jobs_worker(job_queue, db_session_factory, db_crop_job_model, loadtest_mode_enabled=True)
+            worker.process_jobs_worker(
+                job_queue,
+                db_session_factory,
+                db_crop_job_model,
+                loadtest_mode_enabled=True,
+            )
         )
         await asyncio.sleep(0.1)
         task.cancel()
@@ -160,12 +196,14 @@ with patch.dict(sys.modules, {
         assert db_job.status == "failed"
 
     @pytest.mark.asyncio
-    async def test_startup_and_shutdown_worker(monkeypatch):
+    async def test_startup_and_shutdown_worker(monkeypatch) -> None:
         # Mock app_instance
         class State:
             pass
+
         class App:
             state = State()
+
         app_instance = App()
 
         monkeypatch.setattr(worker, "Base", MagicMock())

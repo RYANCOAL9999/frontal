@@ -4,10 +4,12 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON
 
+
 # Pydantic models for the crop job submission and response structures
 class Point(BaseModel):
     x: float = Field(..., description="X coordinate of the point.")
     y: float = Field(..., description="Y coordinate of the point.")
+
 
 # Pydantic models for the crop job submission payload and response structures
 class SubmitPayload(BaseModel):
@@ -17,6 +19,7 @@ class SubmitPayload(BaseModel):
         ..., description="Base64 encoded string of the segmentation map."
     )
 
+
 # Pydantic model for the job submission response
 class JobResponse(BaseModel):
     id: str = Field(..., description="Unique ID of the submitted job.")
@@ -24,6 +27,7 @@ class JobResponse(BaseModel):
         ...,
         description="Current status of the job (e.g., 'pending', 'completed', 'failed').",
     )
+
 
 # Pydantic model for the mask contour details in the crop result
 class MaskContourDetail(BaseModel):
@@ -38,6 +42,7 @@ class MaskContourDetail(BaseModel):
         ..., description="List of [x, y] coordinates forming the contour."
     )
 
+
 # Pydantic model for the crop result response, including SVG and mask contours
 class CropResultResponse(BaseModel):
     svg: str = Field(
@@ -47,6 +52,7 @@ class CropResultResponse(BaseModel):
     mask_contours: List[MaskContourDetail] = Field(
         ..., description="List of detailed mask contours, including SVG path data."
     )
+
 
 # Pydantic model for the job status response, including SVG and mask contours
 class JobStatusResponse(JobResponse):
@@ -60,6 +66,7 @@ class JobStatusResponse(JobResponse):
 
     class Config:
         orm_mode = True
+
 
 # This class represents the database model for crop jobs
 class DBCropJob(Base):
@@ -78,5 +85,5 @@ class DBCropJob(Base):
     svg_base64 = Column(Text, nullable=True)
     mask_contours_json = Column(JSON, nullable=True)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"<DBCropJob(job_id='{self.job_id}', status='{self.status}')>"

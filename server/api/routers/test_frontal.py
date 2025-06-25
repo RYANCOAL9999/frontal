@@ -1,38 +1,44 @@
 import pytest
-from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock, AsyncMock
+from fastapi import FastAPI
+from typing import Generator
 from datetime import datetime
 from server.api.routers import frontal
-from models.crop_model import SubmitPayload, Landmark, JobResponse, JobStatusResponse
-from fastapi import FastAPI
+from fastapi.testclient import TestClient
+from models.crop_model import SubmitPayload
+from unittest.mock import patch, MagicMock, AsyncMock
+
 
 # Patch dependencies and FastAPI app for testing
 @pytest.fixture
-def client():
+def client() -> TestClient:
     app = FastAPI()
     app.include_router(frontal.router)
     return TestClient(app)
 
+
 @pytest.fixture
-def mock_db():
+def mock_db() -> Generator[MagicMock, None, None]:
     with patch("server.api.routers.frontal.get_db") as mock:
         yield mock
 
+
 @pytest.fixture
-def mock_sessionlocal():
+def mock_sessionlocal() -> Generator[MagicMock, None, None]:
     with patch("server.api.routers.frontal.SessionLocal") as mock:
         yield mock
 
+
 @pytest.fixture
-def sample_payload():
+def sample_payload() -> SubmitPayload:
     return {
         "image": "base64image",
         "landmarks": [{"x": 1, "y": 2}, {"x": 3, "y": 4}],
-        "segmentation_map": "base64seg"
+        "segmentation_map": "base64seg",
     }
 
+
 @pytest.fixture
-def sample_db_job():
+def sample_db_job() -> MagicMock:
     mock_job = MagicMock()
     mock_job.job_id = "test-job-id"
     mock_job.status = "completed"
@@ -44,7 +50,8 @@ def sample_db_job():
     mock_job.created_at = datetime.utcnow()
     return mock_job
 
-def test_submit_frontal_crop_new_job(client, mock_db, sample_payload):
+
+def test_submit_frontal_crop_new_job(client, mock_db, sample_payload) -> None:
     # Simulate no existing job
     db = MagicMock()
     db.query().filter().first.return_value = None
@@ -61,7 +68,10 @@ def test_submit_frontal_crop_new_job(client, mock_db, sample_payload):
         assert "id" in data
         assert data["status"] == "pending"
 
-def test_submit_frontal_crop_existing_job(client, mock_db, sample_payload, sample_db_job):
+
+def test_submit_frontal_crop_existing_job(
+    client, mock_db, sample_payload, sample_db_job
+) -> None:
     # Simulate existing completed job
     db = MagicMock()
     db.query().filter().first.return_value = sample_db_job
@@ -73,7 +83,8 @@ def test_submit_frontal_crop_existing_job(client, mock_db, sample_payload, sampl
     assert data["id"] == "test-job-id"
     assert data["status"] == "completed"
 
-def test_submit_frontal_crop_db_error(client, mock_db, sample_payload):
+
+def test_submit_frontal_crop_db_error(client, mock_db, sample_payload) -> None:
     db = MagicMock()
     db.query().filter.side_effect = Exception("DB error")
     db.rollback = MagicMock()
@@ -83,7 +94,8 @@ def test_submit_frontal_crop_db_error(client, mock_db, sample_payload):
     assert response.status_code == 500
     assert "error" in response.text or "An error occurred" in response.text
 
-def test_get_crop_job_status_found(client, mock_db, mock_sessionlocal, sample_db_job):
+
+def test_get_crop_job_status_found(client, sample_db_job) -> None:
     # Patch the LRU cache function to return a job dict
     job_dict = {
         "id": sample_db_job.job_id,
@@ -92,7 +104,9 @@ def test_get_crop_job_status_found(client, mock_db, mock_sessionlocal, sample_db
         "mask_contours": sample_db_job.mask_contours_json,
         "error": None,
     }
-    with patch("server.api.routers.frontal._get_job_data_from_db_cached", return_value=job_dict):
+    with patch(
+        "server.api.routers.frontal._get_job_data_from_db_cached", return_value=job_dict
+    ):
         response = client.get(f"/crop/status/{sample_db_job.job_id}")
         assert response.status_code == 200
         data = response.json()
@@ -102,8 +116,11 @@ def test_get_crop_job_status_found(client, mock_db, mock_sessionlocal, sample_db
         assert data["mask_contours"] == "contours"
         assert data["error"] is None
 
-def test_get_crop_job_status_not_found(client, mock_db, mock_sessionlocal):
-    with patch("server.api.routers.frontal._get_job_data_from_db_cached", return_value=None):
+
+def test_get_crop_job_status_not_found(client) -> None:
+    with patch(
+        "server.api.routers.frontal._get_job_data_from_db_cached", return_value=None
+    ):
         response = client.get("/crop/status/nonexistent-job")
         assert response.status_code == 404
         assert "not found" in response.text.lower()
