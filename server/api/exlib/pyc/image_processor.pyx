@@ -2,7 +2,7 @@ import math
 import base64
 from io import BytesIO
 from PIL import Image, ExifTags
-from typing import List, Optional, Tuple
+from typing import List, Optional
 
 # Configuration for cropping
 CROP_PADDING = 50 # Pixels to add around the landmark bounding box

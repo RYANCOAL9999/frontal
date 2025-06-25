@@ -1,6 +1,5 @@
 import asyncio
 from datetime import datetime
-from typing import Dict, List
 from sqlalchemy.orm import Session
 from services.logger import console
 from routers.frontal import job_queue

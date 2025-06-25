@@ -1,5 +1,5 @@
-from rich.console import Console
 from rich.theme import Theme
+from rich.console import Console
 
 # Custom theme for the console output
 custom_theme = Theme(
