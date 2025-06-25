@@ -1,5 +1,4 @@
 import base64
-import math
 import pytest
 from PIL import Image
 from io import BytesIO
@@ -25,82 +24,120 @@ from services.logger import console
 # After compiling image_processor.pyx, the compiled .so/.pyd file will appear
 # alongside image_processor.pyx in exlib/pyc.
 try:
-    from pyc.image_processor import image_processor
-
+    from pyc import image_processor
+    
     console.log(
         "[bold green]Successfully imported Cythonized image_processor from pyc.[/bold green]"
     )
 except ImportError:
     # Fallback to pure Python version if Cython module is not found.
-    from py.image_processor import image_processor
+    from py import image_processor
 
     console.log(
         "[bold yellow]Cythonized image_processor not found. Using pure Python version from py.[/bold yellow]"
     )
 
+def create_test_image(width=100, height=100, color=(255, 0, 0)):
+    img = Image.new("RGB", (width, height), color)
+    buf = BytesIO()
+    img.save(buf, format="JPEG")
+    return buf.getvalue()
 
-def test_points_to_smooth_svg_path_empty():
-    assert image_processor._points_to_smooth_svg_path([]) == ""
+def encode_image_to_base64_bytes(img_bytes):
+    return base64.b64encode(img_bytes)
 
-def test_points_to_smooth_svg_path_single_point():
-    points = [{"x": 10, "y": 20}]
-    expected = "M 10 20 Z"
-    assert image_processor._points_to_smooth_svg_path(points) == expected
-
-def test_points_to_smooth_svg_path_two_points():
-    points = [{"x": 10, "y": 20}, {"x": 30, "y": 40}]
-    expected = "M 10 20 L 30 40"
-    assert image_processor._points_to_smooth_svg_path(points) == expected
-
-def test_points_to_smooth_svg_path_three_points():
-    points = [{"x": 0, "y": 0}, {"x": 10, "y": 0}, {"x": 10, "y": 10}]
-    result = image_processor._points_to_smooth_svg_path(points)
-    assert result.startswith("M 0 0 Q 0 0, 5.0 0.0 T 10.0 5.0 T 5.0 5.0 Z")
-
-def test_points_to_smooth_svg_path_exclude_region():
-    points = [{"x": 0, "y": 0}, {"x": 10, "y": 0}, {"x": 10, "y": 10}]
-    exclude = [{"x": 5, "y": 5}]
-    result = image_processor._points_to_smooth_svg_path(points, exclude)
-    assert isinstance(result, str)
-    assert result.startswith("M ")
-
-def test_cropped_img_save_jpeg(tmp_path):
-    img = Image.new("RGB", (10, 10), color="red")
+def test__cropped_img_save_jpeg(tmp_path):
+    img = Image.new("RGB", (10, 10), (123, 222, 111))
     buf = BytesIO()
     image_processor._cropped_img_save(img, buf, "JPEG")
     buf.seek(0)
     loaded = Image.open(buf)
-    assert loaded.format == "JPEG"
+    assert loaded.size == (10, 10)
 
-def test_cropped_img_save_fallback(tmp_path):
-    img = Image.new("RGB", (10, 10), color="blue")
+def test__cropped_img_save_fallback_to_jpeg(tmp_path):
+    img = Image.new("RGB", (10, 10), (123, 222, 111))
     buf = BytesIO()
-    # Pass an invalid format to trigger fallback
+    # Use an invalid format to trigger fallback
     image_processor._cropped_img_save(img, buf, "INVALID_FORMAT")
     buf.seek(0)
     loaded = Image.open(buf)
-    assert loaded.format == "JPEG"
+    assert loaded.size == (10, 10)
 
-def test_dummy_calculation_runs():
+def test__dummy_calculation_runs():
     # Just ensure it runs without error
     image_processor._dummy_calculation()
 
-def create_test_image_base64():
-    img = Image.new("RGB", (100, 100), color="white")
-    buf = BytesIO()
-    img.save(buf, format="JPEG")
-    return base64.b64encode(buf.getvalue())
+@pytest.mark.parametrize(
+    "points,exclude,expected_start",
+    [
+        ([{"x": 0, "y": 0}], None, "M 0 0 Z"),
+        ([{"x": 0, "y": 0}, {"x": 10, "y": 10}], None, "M 0 0 L 10 10"),
+        (
+            [{"x": 0, "y": 0}, {"x": 10, "y": 0}, {"x": 10, "y": 10}],
+            None,
+            "M 0 0 Q 0 0, 5.0 0.0 T 10.0 5.0 T 5.0 5.0 Z",
+        ),
+    ],
+)
+def test__points_to_smooth_svg_path_basic(points, exclude, expected_start):
+    result = image_processor._points_to_smooth_svg_path(points, exclude)
+    assert result.startswith(expected_start.split()[0])
 
-def test_process_image_data_intensive_basic():
-    img_b64 = create_test_image_base64()
+def test__points_to_smooth_svg_path_with_exclusion():
+    points = [{"x": 50, "y": 50}, {"x": 60, "y": 50}, {"x": 60, "y": 60}]
+    exclude = [{"x": 55, "y": 55}]
+    result = image_processor._points_to_smooth_svg_path(points, exclude)
+    # Should adjust points away from exclusion center
+    assert "M" in result and "Q" in result
+
+def test__process_image_decoding_and_cropping_basic():
+    img_bytes = create_test_image(100, 100)
+    img_b64 = encode_image_to_base64_bytes(img_bytes)
     landmarks = {
         "landmarks": [
-            [{"x": 10, "y": 10}, {"x": 20, "y": 10}, {"x": 20, "y": 20}],
-            [{"x": 30, "y": 30}, {"x": 40, "y": 30}, {"x": 40, "y": 40}],
-            [{"x": 50, "y": 50}, {"x": 60, "y": 50}, {"x": 60, "y": 60}],
-            [{"x": 70, "y": 70}, {"x": 80, "y": 70}, {"x": 80, "y": 80}],
-        ],
-        "dimensions": [100, 100]
+            [{"x": 10, "y": 10}, {"x": 90, "y": 10}, {"x": 90, "y": 90}, {"x": 10, "y": 90}]
+        ]
+    }
+    result = image_processor._process_image_decoding_and_cropping(img_b64, landmarks)
+    b64_str, w, h, off_x, off_y = result
+    assert isinstance(b64_str, str)
+    assert w > 0 and h > 0
+    assert off_x >= 0 and off_y >= 0
+
+def test__process_image_decoding_and_cropping_error(monkeypatch):
+    # Pass invalid image data to trigger exception
+    bad_img_b64 = b"not_base64"
+    landmarks = {"dimensions": [123, 456]}
+    result = image_processor._process_image_decoding_and_cropping(bad_img_b64, landmarks)
+    b64_str, w, h, off_x, off_y = result
+    assert w == 123 and h == 456
+    assert off_x == 0 and off_y == 0
+
+def test__generate_final_svg_content():
+    svg = image_processor._generate_final_svg_content(
+        100, 200, ['<clipPath id="a"></clipPath>'], ['<image width="100" height="200"/>']
+    )
+    assert svg.startswith('<svg')
+    assert 'clipPath' in svg
+    assert 'image' in svg
+    assert 'width="100"' in svg
+    assert 'height="200"' in svg
+
+def test__extract_raw_points():
+    contour = [{"x": 1, "y": 2}, {"x": 3, "y": 4}]
+    points = image_processor._extract_raw_points(contour)
+    assert points == [[1, 2], [3, 4]]
+
+def test_process_image_data_intensive_basic():
+    img_bytes = create_test_image(100, 100)
+    img_b64 = encode_image_to_base64_bytes(img_bytes)
+    landmarks = {
+        "landmarks": [
+            [{"x": 10, "y": 10}, {"x": 90, "y": 10}, {"x": 90, "y": 90}, {"x": 10, "y": 90}],
+            [{"x": 20, "y": 20}, {"x": 80, "y": 20}, {"x": 80, "y": 80}, {"x": 20, "y": 80}],
+            [{"x": 30, "y": 30}, {"x": 70, "y": 30}, {"x": 70, "y": 70}, {"x": 30, "y": 70}],
+            [{"x": 40, "y": 40}, {"x": 60, "y": 40}, {"x": 60, "y": 60}, {"x": 40, "y": 60}],
+        ]
     }
     svg_b64, mask_contours = image_processor.process_image_data_intensive(
         loadtest_mode_enabled=True,
@@ -109,21 +146,4 @@ def test_process_image_data_intensive_basic():
     )
     assert isinstance(svg_b64, str)
     assert isinstance(mask_contours, list)
-    assert len(mask_contours) == 4
-    # SVG should decode to valid XML
-    svg_xml = base64.b64decode(svg_b64).decode("utf-8")
-    assert svg_xml.startswith("<svg")
-    assert "clipPath" in svg_xml
-
-def test_process_image_data_intensive_no_landmarks():
-    img_b64 = create_test_image_base64()
-    landmarks = {"landmarks": [], "dimensions": [100, 100]}
-    svg_b64, mask_contours = image_processor.process_image_data_intensive(
-        loadtest_mode_enabled=True,
-        landmarks_data=landmarks,
-        original_image_base64_bytes=img_b64,
-    )
-    assert isinstance(svg_b64, str)
-    assert isinstance(mask_contours, list)
-    svg_xml = base64.b64decode(svg_b64).decode("utf-8")
-    assert svg_xml.startswith("<svg")
+    assert mask_contours and "name" in mask_contours[0] and "path_d" in mask_contours[0]

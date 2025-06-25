@@ -2,7 +2,7 @@ import math
 import base64
 from io import BytesIO
 from PIL import Image, ExifTags
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 # Constants for cropping
 CROP_PADDING = 50  # Padding around the detected landmarks for cropping
@@ -15,6 +15,26 @@ region_names = {
     3: "nose",  # Assuming 0 is right_cheek and 3 is nose
     # , Add more regions as needed
 }
+
+
+# Function to save the cropped image to a BytesIO buffer
+def _cropped_img_save(image: Image.Image, buffered: BytesIO, format: Optional[str]):
+    try:
+        image.save(buffered, format=format if format else "JPEG")
+    except Exception:
+        image.save(buffered, format="JPEG")
+
+
+# Function to simulate intensive calculations
+def _dummy_calculation():
+    # dummy calculation to mimic the original code's complexity
+    dummy_calculation_result = 0
+
+    # Simulate some intensive calculations
+    for i in range(100):
+        for j in range(1000):
+            dummy_calculation_result += (i * j) % 12345
+
 
 # Helper function to convert points to a smooth SVG path
 def _points_to_smooth_svg_path(
@@ -111,61 +131,27 @@ def _points_to_smooth_svg_path(
     return " ".join(path_commands)
 
 
-# Function to save the cropped image to a BytesIO buffer
-def _cropped_img_save(image: Image.Image, buffered: BytesIO, format: Optional[str]):
-    try:
-        image.save(buffered, format=format if format else "JPEG")
-    except Exception:
-        image.save(buffered, format="JPEG")
+# New function to encapsulate image decoding and cropping logic
+def _process_image_decoding_and_cropping(
+    original_image_base64_bytes: bytes, landmarks_data: Dict[str, Any]
+) -> Tuple[str, int, int, int, int]:
 
-# Function to simulate intensive calculations
-def _dummy_calculation():
-    # dummy calculation to mimic the original code's complexity
-    dummy_calculation_result = 0
-
-    # Simulate some intensive calculations
-    for i in range(100):
-        for j in range(1000):
-            dummy_calculation_result += (i * j) % 12345
-
-
-
-# Function to process image data and landmarks, performing cropping and SVG generation
-def process_image_data_intensive(
-    loadtest_mode_enabled: bool,
-    landmarks_data: Dict[str, Any],
-    original_image_base64_bytes: bytes,
-    # , segmentation_map_base64_bytes: bytes
-):
-
-    # Calling the dummy calculation to simulate intensive processing
-    if not loadtest_mode_enabled:
-        _dummy_calculation()
-
-    # Process the original image and landmarks data
-    rotated_and_cropped_image_base64_str = ""
-
-    # Initialize variables for image dimensions and crop offsets
     image_width, image_height = 0, 0
     crop_offset_x, crop_offset_y = 0, 0
+    rotated_and_cropped_image_base64_str = ""
 
     try:
-        # Decode the original image from base64
         image_bytes = base64.b64decode(original_image_base64_bytes)
-        # Open the image using PIL
         img = Image.open(BytesIO(image_bytes))
 
-        # Check if the image has EXIF data for orientation
         exif = img._getexif()
         if exif:
-            # Find the orientation tag ID
             for orientation_tag_id in ExifTags.TAGS.keys():
                 if ExifTags.TAGS[orientation_tag_id] == "Orientation":
                     break
             else:
                 orientation_tag_id = None
 
-            # Rotate the image based on the EXIF orientation tag
             if orientation_tag_id is not None and orientation_tag_id in exif:
                 if exif[orientation_tag_id] == 3:
                     img = img.rotate(180, expand=True)
@@ -174,14 +160,11 @@ def process_image_data_intensive(
                 elif exif[orientation_tag_id] == 8:
                     img = img.rotate(90, expand=True)
 
-        # Cropping Logic based on Landmarks
         landmarks_list_of_lists = landmarks_data.get("landmarks", [])
 
-        # Initialize min and max coordinates for cropping
         min_x, max_x = float("inf"), float("-inf")
         min_y, max_y = float("inf"), float("-inf")
 
-        # Iterate through the landmarks to find the bounding box
         for contour_group in landmarks_list_of_lists:
             for point_data in contour_group:
                 if (
@@ -194,16 +177,13 @@ def process_image_data_intensive(
                     min_y = min(min_y, point_data["y"])
                     max_y = max(max_y, point_data["y"])
 
-        # If no landmarks were found, use the full image dimensions
         current_img_width, current_img_height = img.size
 
-        # Calculate crop dimensions with padding
         crop_left = math.floor(max(0, min_x - CROP_PADDING))
         crop_top = math.floor(max(0, min_y - CROP_PADDING))
         crop_right = math.ceil(min(current_img_width, max_x + CROP_PADDING))
         crop_bottom = math.ceil(min(current_img_height, max_y + CROP_PADDING))
 
-        # Ensure crop dimensions are valid
         if (
             min_x == float("inf")
             or min_y == float("inf")
@@ -216,15 +196,9 @@ def process_image_data_intensive(
             cropped_img = img.crop((crop_left, crop_top, crop_right, crop_bottom))
             crop_offset_x, crop_offset_y = crop_left, crop_top
 
-        # Save the cropped image to a BytesIO buffer
         image_width, image_height = cropped_img.size
-
-        # Convert the cropped image to base64
         buffered = BytesIO()
-
-        # Attempt to save the image in its original format, fallback to JPEG if not available
         _cropped_img_save(cropped_img, buffered, img.format)
-
         rotated_and_cropped_image_base64_str = base64.b64encode(
             buffered.getvalue()
         ).decode("utf-8")
@@ -241,6 +215,70 @@ def process_image_data_intensive(
             "utf-8"
         )
         crop_offset_x, crop_offset_y = 0, 0
+        # You might want to log the error here: print(f"Error: {e}")
+
+    return (
+        rotated_and_cropped_image_base64_str,
+        image_width,
+        image_height,
+        crop_offset_x,
+        crop_offset_y,
+    )
+
+
+def _generate_final_svg_content(
+    image_width: int,
+    image_height: int,
+    clip_path_defs: List[str],
+    image_clips: List[str],
+) -> str:
+
+    defs_content = "\n".join(clip_path_defs)
+    clips_content = "\n".join(image_clips)
+
+    final_svg_content = (
+        f'<svg viewBox="0 0 {image_width} {image_height}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">\n'
+        f"    <defs>\n"
+        f"        {defs_content}\n"
+        f"    </defs>\n"
+        f'    <rect x="0" y="0" width="{image_width}" height="{image_height}" fill="#FAFAFA"/>\n'
+        f"    {clips_content}\n"
+        f"</svg>"
+    )
+    return final_svg_content
+
+
+def _extract_raw_points(contour_group: List[Dict[str, float]]) -> List[List[float]]:
+    raw_points = [
+        [p["x"], p["y"]]
+        for p in contour_group
+        if isinstance(p, dict) and "x" in p and "y" in p
+    ]
+    return raw_points
+
+
+# Function to process image data and landmarks, performing cropping and SVG generation
+def process_image_data_intensive(
+    loadtest_mode_enabled: bool,
+    landmarks_data: Dict[str, Any],
+    original_image_base64_bytes: bytes,
+    # , segmentation_map_base64_bytes: bytes
+):
+
+    # Calling the dummy calculation to simulate intensive processing
+    if not loadtest_mode_enabled:
+        _dummy_calculation()
+
+    # Call the new helper function to handle image decoding and cropping
+    (
+        rotated_and_cropped_image_base64_str,
+        image_width,
+        image_height,
+        crop_offset_x,
+        crop_offset_y,
+    ) = _process_image_decoding_and_cropping(
+        original_image_base64_bytes, landmarks_data
+    )
 
     # --- Conceptual use of Segmentation Map ---
     # In a real scenario, you would parse the segmentation_map_base64_bytes here.
@@ -332,13 +370,6 @@ def process_image_data_intensive(
             contour_group, exclude_target_landmarks
         )
 
-        # If the path is empty, skip this contour
-        raw_points = [
-            [p["x"], p["y"]]
-            for p in contour_group
-            if isinstance(p, dict) and "x" in p and "y" in p
-        ]
-
         # If the region name is not found, use a default name
         clip_id = f"mask_{region_name.replace(' ', '_')}"
 
@@ -354,23 +385,22 @@ def process_image_data_intensive(
 
         # Append the generated mask contour data
         generated_mask_contours_list.append(
-            {"name": region_name, "path_d": path_d_string, "points": raw_points}
+            {
+                "name": region_name,
+                "path_d": path_d_string,
+                "points": _extract_raw_points(
+                    contour_group
+                ),  # If the path is empty, skip this contour
+            }
         )
 
-    # Join the clip path definitions and image clips into strings
-    defs_content = "\n".join(clip_path_defs)
-    clips_content = "\n".join(image_clips)
-
     # Prepare the final SVG content
-    final_svg_content = (
-        f'<svg viewBox="0 0 {image_width} {image_height}" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">\n'
-        f"    <defs>\n"
-        f"        {defs_content}\n"
-        f"    </defs>\n"
-        f"    <!-- Draw a base image or background if desired, though clip-path images will cover it -->\n"
-        f'    <rect x="0" y="0" width="{image_width}" height="{image_height}" fill="#FAFAFA"/>\n'
-        f"    {clips_content}\n"
-        f"</svg>"
+    final_svg_content = _generate_final_svg_content(
+        image_width,
+        image_height,
+        rotated_and_cropped_image_base64_str,
+        clip_path_defs,
+        image_clips,
     )
 
     # Encode the final SVG content to base64
